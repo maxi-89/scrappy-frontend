@@ -19,18 +19,31 @@
 
 ## 3. Project Context
 
-**Product**: Scrappy — a business data marketplace. Scrapes, cleans, normalizes, and sells datasets of businesses obtained from Google Maps. Datasets are segmented by category, geographic zone, or business type.
+**Product**: Scrappy — an on-demand business data marketplace. Users purchase scraping jobs for a specific business category and geographic zone. After payment, scraping runs asynchronously and the result (CSV, Excel, or JSON) is available for download.
 
-**Frontend Stack**: Next.js (App Router) · TypeScript (strict) · Tailwind CSS · Jest + React Testing Library · Playwright
+**Business model**: Users browse offers (by category), select a zone, choose a format, and pay. Pricing is zone-based (configured by admin). After payment, AWS Step Functions runs the scraping pipeline and delivers the result file.
+
+**Frontend Stack**: Next.js (App Router) · TypeScript (strict) · Tailwind CSS · Auth0 (`@auth0/nextjs-auth0`) · Stripe (`@stripe/react-stripe-js`) · Jest + React Testing Library · Playwright
+
+**Backend API**: `https://api.scrappy.io` (FastAPI on AWS Lambda). Auth via Auth0 RS256 JWT (Bearer token). See `openspec/specs/api-spec.yml` for all endpoints.
 
 **Infrastructure**: Vercel (frontend deployment)
 
-## 4. Specific Standards
+## 4. Auth
+
+Authentication is handled by **Auth0** (`@auth0/nextjs-auth0`).
+- The SDK manages login/logout/callback routes at `/api/auth/[auth0]`
+- After login, call `POST /auth/sync` on the backend to register the user in the Scrappy DB
+- Pass the Auth0 `accessToken` as `Authorization: Bearer {token}` in all authenticated API requests
+- Protected routes: `/orders/**`, `/checkout/**`, `/admin/**` — enforced via `middleware.ts`
+- Admin routes additionally require `X-Admin-Key` header (server-side env var `ADMIN_API_KEY`)
+
+## 5. Specific Standards
 
 For detailed standards refer to:
 
-- [Frontend Standards](./openspec/specs/frontend-standards.mdc) — Next.js App Router, Tailwind CSS, Server/Client Components, data fetching
+- [Frontend Standards](./openspec/specs/frontend-standards.mdc) — Next.js App Router, Tailwind CSS, Server/Client Components, data fetching, API client pattern
 - [Documentation Standards](./openspec/specs/documentation-standards.mdc) — docs structure and maintenance
-- [API Spec](./openspec/specs/api-spec.yml) — OpenAPI 3.0 spec (source of truth for endpoints)
-- [Data Model](./openspec/specs/data-model.md) — Supabase/PostgreSQL relational schema
-- [Development Guide](./openspec/specs/development_guide.md) — setup and deployment instructions
+- [API Spec](./openspec/specs/api-spec.yml) — OpenAPI 3.0 spec (source of truth for endpoints and schemas)
+- [Data Model](./openspec/specs/data-model.md) — PostgreSQL relational schema (offers, pricing, orders, scraping_jobs, users)
+- [Development Guide](./openspec/specs/development_guide.md) — local setup, project structure, env vars, deploy

@@ -341,31 +341,87 @@ export default config;
 
 All API calls go through service modules in `lib/api/`. Never call `fetch` directly inside components.
 
+### Base client (`lib/api/client.ts`)
+
+All requests go through a single base function that injects the Auth0 Bearer token and handles errors uniformly:
+
 ```typescript
-// lib/api/ordersApi.ts
+// lib/api/client.ts
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL!;
 
-export async function createOrder(data: CreateOrderInput): Promise<{ id: string }> {
-  const res = await fetch(`${BASE_URL}/orders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+export async function apiFetch<T>(
+  path: string,
+  options?: RequestInit & { token?: string }
+): Promise<T> {
+  const { token, ...fetchOptions } = options ?? {};
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...fetchOptions,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...fetchOptions.headers,
+    },
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.error ?? `Request failed with status ${res.status}`);
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.error ?? `Request failed: ${res.status}`);
   }
 
   return res.json();
 }
 ```
 
+### Service modules
+
+```typescript
+// lib/api/ordersApi.ts
+import { apiFetch } from './client';
+import type { CreateOrderRequest, CreateOrderResponse, OrderDetailResponse } from '@/types/order';
+
+export async function createOrder(data: CreateOrderRequest, token: string): Promise<CreateOrderResponse> {
+  return apiFetch<CreateOrderResponse>('/orders', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    token,
+  });
+}
+
+export async function getOrder(id: string, token: string): Promise<OrderDetailResponse> {
+  return apiFetch<OrderDetailResponse>(`/orders/${id}`, { token });
+}
+```
+
+### Auth token
+
+Obtain the access token from the Auth0 SDK and pass it to every authenticated API call:
+
+```tsx
+// In a Client Component:
+import { useUser } from '@auth0/nextjs-auth0/client';
+
+const { user } = useUser();
+const token = user?.accessToken as string;
+const order = await getOrder(id, token);
+
+// In a Server Component (route handler / Server Action):
+import { getAccessToken } from '@auth0/nextjs-auth0';
+const { accessToken } = await getAccessToken();
+```
+
 **Rules:**
-- Use `NEXT_PUBLIC_API_URL` for client-side calls, `API_BASE_URL` for server-side
-- Always check `res.ok` and throw a meaningful error
-- Return typed data from service functions (no `any`)
-- Handle network errors separately from HTTP errors
+- All authenticated backend endpoints require `Authorization: Bearer {accessToken}`
+- Use `NEXT_PUBLIC_API_URL` (works both client-side and server-side)
+- Always throw `ApiError` with the HTTP status — components can check `err.status` to branch behavior (401 → redirect to login, 403 → show access denied, 404 → show not-found)
+- Return typed data from service functions — no `any`
+- For file downloads (`GET /orders/{id}/download`), read the response as a Blob, not JSON
 
 ---
 

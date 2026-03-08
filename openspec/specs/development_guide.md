@@ -1,321 +1,262 @@
-# Development Guide — Scrappy
+# Development Guide — Scrappy Frontend
 
-Step-by-step instructions to set up and run the project locally and deploy to production.
+Setup and run instructions for the Scrappy Next.js frontend.
+
+---
 
 ## Tech Stack
 
-### Backend
-- **Runtime**: Python 3.12
-- **Framework**: FastAPI
-- **ASGI Adapter**: Mangum (AWS Lambda)
-- **Database**: Supabase (PostgreSQL via SQLAlchemy 2.0 async + asyncpg)
-- **Validation**: Pydantic v2
-- **Testing**: pytest + pytest-asyncio
-- **Linting**: ruff + mypy
-- **Dependency management**: uv (pyproject.toml)
-
-### Frontend
-- **Framework**: Next.js (App Router)
-- **Language**: TypeScript (strict mode)
-- **Styling**: Tailwind CSS
-- **Testing**: Jest + React Testing Library / Playwright
-
-### Infrastructure
-- **Frontend**: Vercel
-- **Backend**: AWS Lambda (via Mangum) + API Gateway
-- **Database**: Supabase (managed PostgreSQL)
-- **Payments**: Stripe
+| Concern | Technology |
+|---|---|
+| Framework | Next.js (App Router) |
+| Language | TypeScript (strict mode) |
+| Styling | Tailwind CSS |
+| Auth | Auth0 (`@auth0/nextjs-auth0`) |
+| Payments | Stripe (`@stripe/stripe-js`, `@stripe/react-stripe-js`) |
+| HTTP | native `fetch` via `lib/api/` |
+| Testing | Jest + React Testing Library |
+| E2E | Playwright |
+| Deploy | Vercel |
 
 ---
 
 ## Prerequisites
 
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- Node.js 22+ and npm 10+
-- AWS CLI configured (`aws configure`)
-- Supabase CLI — `npm install -g supabase`
-- A Supabase project (local or cloud)
+- Node.js 22+
+- npm 10+
 
 ---
 
-## Backend
+## Setup
 
-### 1. Install
-
-```bash
-cd scrappy-backend
-uv sync
-```
-
-### 2. Environment Configuration
-
-Copy `.env.example` to `.env` and fill in the values (never commit `.env`):
+### 1. Install dependencies
 
 ```bash
-cp .env.example .env
-```
-
-```env
-# Database
-DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:54322/postgres
-
-# Auth0 (required from SCRUM-6 onwards)
-AUTH0_DOMAIN=your-tenant.us.auth0.com
-AUTH0_AUDIENCE=https://api.scrappy.io
-
-# Stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-# Admin
-ADMIN_API_KEY=dev-admin-key-change-in-prod
-
-# Environment
-ENVIRONMENT=development
-```
-
-### 3. Local Supabase Setup
-
-```bash
-# Start local Supabase (Docker required)
-supabase start
-
-# Apply migrations
-supabase db reset
-
-# View local Studio at http://localhost:54323
-```
-
-### 4. Run Migrations
-
-```bash
-# Apply all migrations
-uv run alembic upgrade head
-
-# Generate a new migration after changing ORM models
-uv run alembic revision --autogenerate -m "describe change"
-```
-
-### 5. Local Development
-
-```bash
-# Start FastAPI dev server with hot reload
-uv run uvicorn main:app --reload --port 8000
-```
-
-- API available at: `http://localhost:8000`
-- Interactive docs at: `http://localhost:8000/docs`
-- ReDoc at: `http://localhost:8000/redoc`
-
-### 6. Running Tests
-
-```bash
-# Run all tests
-uv run pytest
-
-# With coverage report
-uv run pytest --cov=app --cov-report=term-missing
-
-# Run only unit tests
-uv run pytest tests/unit/
-
-# Watch mode
-uv run pytest --watch
-```
-
-Coverage threshold: **90%** for branches, functions, and statements.
-
-### 7. Linting and Type Checking
-
-```bash
-# Lint and auto-fix
-uv run ruff check . --fix
-uv run ruff format .
-
-# Type check
-uv run mypy app/
-```
-
-### 8. Deploy to AWS Lambda
-
-```bash
-# Package and deploy (using AWS SAM or Serverless Framework)
-uv run python scripts/build_lambda.py
-
-# Or with Serverless Framework
-npx serverless deploy --stage dev
-```
-
-After deploying, the CLI outputs the API Gateway endpoint URL.
-
-### 9. Backend Project Structure
-
-```
-app/
-├── domain/
-│   ├── models/              # Domain entities (dataset.py, business.py, order.py)
-│   └── repositories/        # Repository interfaces (i_dataset_repository.py)
-├── application/
-│   └── services/            # Application services (dataset_service.py)
-├── infrastructure/
-│   ├── database/            # SQLAlchemy engine, session, ORM models
-│   ├── repositories/        # Repository implementations
-│   └── errors/              # AppError, DomainValidationError
-└── presentation/
-    ├── routers/             # FastAPI routers (datasets_router.py)
-    └── schemas/             # Pydantic I/O schemas (dataset_schemas.py)
-tests/
-├── unit/
-│   ├── domain/
-│   ├── application/
-│   └── presentation/
-└── integration/
-alembic/                     # Database migrations
-main.py                      # FastAPI app + Mangum Lambda handler
-pyproject.toml
-.env                         ← not committed
-.env.example
-.gitignore
-Makefile
-```
-
-### 10. Makefile Reference
-
-```bash
-make dev          # Start FastAPI dev server
-make test         # Run all tests
-make test-cov     # Tests + coverage report
-make lint         # ruff check + format
-make typecheck    # mypy
-make migrate      # alembic upgrade head
-make db-reset     # supabase db reset
-```
-
----
-
-## Frontend
-
-### 1. Install
-
-```bash
-cd scrappy-frontend
 npm install
 ```
 
-### 2. Environment Configuration
+### 2. Configure environment variables
 
-Create a `.env.local` file at the frontend root (never commit this file):
-
-```env
-# Backend API
-NEXT_PUBLIC_API_URL=http://localhost:8000/v1
-API_BASE_URL=http://localhost:8000/v1
-
-# Supabase (public keys only)
-NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-local-anon-key
-
-# Stripe (public key only)
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+```bash
+cp .env.example .env.local
 ```
 
-### 3. Local Development
+Edit `.env.local`:
+
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | Yes | Backend API base URL (e.g. `https://api.scrappy.io` or `http://localhost:8000`) |
+| `AUTH0_SECRET` | Yes | Random 32-byte secret for session encryption — `openssl rand -hex 32` |
+| `AUTH0_BASE_URL` | Yes | Frontend URL (e.g. `http://localhost:3000`) |
+| `AUTH0_ISSUER_BASE_URL` | Yes | Auth0 tenant URL (e.g. `https://your-tenant.us.auth0.com`) |
+| `AUTH0_CLIENT_ID` | Yes | Auth0 application client ID |
+| `AUTH0_CLIENT_SECRET` | Yes | Auth0 application client secret |
+| `AUTH0_AUDIENCE` | Yes | Auth0 API audience (e.g. `https://api.scrappy.io`) |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Yes | Stripe publishable key (`pk_test_...` or `pk_live_...`) |
+
+> Never commit `.env.local` to version control.
+
+### 3. Run locally
 
 ```bash
 npm run dev
 ```
 
-- App available at: `http://localhost:3000`
+- App: `http://localhost:3000`
+- Auth callback route: `http://localhost:3000/api/auth/callback` (handled by `@auth0/nextjs-auth0`)
 
-### 4. Running Tests
+---
 
-```bash
-npm test                  # Run unit tests
-npm run test:watch        # Watch mode
-npm run test:coverage     # With coverage report
-npx playwright test       # Run E2E tests
+## Auth0 Setup (local dev)
+
+The frontend uses `@auth0/nextjs-auth0`. The SDK automatically handles:
+- `/api/auth/login` — initiates login
+- `/api/auth/logout` — clears session
+- `/api/auth/callback` — exchanges code for tokens
+- `/api/auth/me` — returns session user (client-side)
+
+After login, the SDK provides the user's `accessToken` (Auth0 JWT) which must be sent as `Authorization: Bearer {token}` to the backend API.
+
+**Important**: After the Auth0 callback, call `POST /auth/sync` on the backend to register the user in the Scrappy DB (SCRUM-25).
+
+---
+
+## Project Structure
+
 ```
-
-### 5. Build and Deploy to Vercel
-
-```bash
-npm run build             # Build for production (CI check)
-vercel --prod             # Deploy to Vercel (or push to main for auto-deploy)
-```
-
-### 6. Frontend Project Structure
-
-```
-frontend/
+scrappy-frontend/
 ├── app/
-│   ├── layout.tsx               # Root layout
-│   ├── page.tsx                 # Home page (dataset marketplace)
+│   ├── layout.tsx                   # Root layout
+│   ├── page.tsx                     # Home → redirects to /offers
 │   ├── globals.css
-│   ├── datasets/
-│   │   ├── page.tsx             # Dataset listing page
-│   │   └── [id]/
-│   │       └── page.tsx         # Dataset detail + buy button
+│   ├── api/
+│   │   └── auth/[auth0]/route.ts    # Auth0 SDK catch-all route handler
+│   ├── auth/
+│   │   └── callback/page.tsx        # POST /auth/sync + redirect (SCRUM-25)
+│   ├── offers/
+│   │   ├── page.tsx                 # Catalog of active offers (SCRUM-27)
+│   │   └── [id]/page.tsx            # Offer detail + order form (SCRUM-29)
+│   ├── checkout/
+│   │   └── [order_id]/page.tsx      # Stripe payment form (SCRUM-30)
 │   ├── orders/
-│   │   ├── page.tsx             # User's order history
-│   │   └── [id]/
-│   │       └── page.tsx         # Order detail + download
-│   └── (auth)/
-│       ├── login/page.tsx
-│       └── register/page.tsx
+│   │   ├── [id]/
+│   │   │   ├── confirmation/page.tsx # Post-payment confirmation (SCRUM-31)
+│   │   │   └── page.tsx             # Order detail + polling + download (SCRUM-33)
+│   │   └── page.tsx                 # Order history (SCRUM-32)
+│   └── admin/
+│       ├── layout.tsx               # Admin layout + X-Admin-Key gate (SCRUM-35)
+│       ├── offers/
+│       │   ├── page.tsx             # Offers list (SCRUM-39)
+│       │   └── [id]/page.tsx        # Edit offer (SCRUM-38)
+│       ├── pricing/page.tsx         # Zone pricing table (SCRUM-43)
+│       └── scraping-jobs/
+│           ├── page.tsx             # Jobs list + polling (SCRUM-37)
+│           └── new/page.tsx         # Trigger job form (SCRUM-36)
 ├── components/
-│   ├── ui/                      # Button, Input, Card, Badge...
-│   ├── datasets/                # DatasetCard, DatasetFilters, SampleDataTable
-│   └── orders/                  # OrderSummary, DownloadButton
+│   ├── ui/                          # Button, Input, Card, Badge, Spinner...
+│   ├── offers/
+│   │   └── OfferCard.tsx            # SCRUM-28
+│   ├── orders/
+│   │   ├── DownloadButton.tsx       # SCRUM-34
+│   │   └── OrderStatusBadge.tsx
+│   └── admin/
+│       └── PricingTable.tsx         # SCRUM-43
 ├── hooks/
-│   ├── useDatasets.ts
-│   └── useOrders.ts
+│   ├── usePolling.ts                # Generic polling hook (used in order detail + jobs list)
+│   └── useAuth.ts                   # Wraps Auth0 session + access token
 ├── lib/
-│   ├── api/                     # datasetsApi.ts, ordersApi.ts
-│   ├── supabase/                # Supabase client
-│   └── utils/                   # cn.ts, formatCurrency.ts, formatDate.ts
-├── types/                       # Dataset, Order, Business, User interfaces
-├── e2e/                         # Playwright E2E tests
-├── __tests__/
+│   ├── api/
+│   │   ├── client.ts                # Base fetch with Bearer token injection (SCRUM-44)
+│   │   ├── offersApi.ts             # getOffers(), getOffer(id, zone?)
+│   │   ├── ordersApi.ts             # createOrder(), getOrders(), getOrder(id), downloadOrder(id)
+│   │   ├── pricingApi.ts            # getPricing(), upsertPricing()
+│   │   └── adminApi.ts              # Admin endpoints
+│   └── utils/
+│       ├── cn.ts                    # clsx + tailwind-merge
+│       ├── formatCurrency.ts
+│       └── formatDate.ts
+├── types/
+│   ├── offer.ts                     # OfferResponse, OfferAdminResponse
+│   ├── order.ts                     # OrderResponse, OrderDetailResponse, CreateOrderRequest
+│   ├── pricing.ts                   # PricingEntryResponse, UpsertPricingRequest
+│   └── scrapingJob.ts               # ScrapingJobResponse
+├── middleware.ts                    # Protected routes (SCRUM-26)
+├── .env.local                       ← not committed
+├── .env.example
 ├── tailwind.config.ts
 ├── next.config.ts
-├── tsconfig.json
-├── .env.local                   ← not committed
-├── .env.example
-└── package.json
-```
-
-### 7. NPM Scripts Reference
-
-```bash
-npm run dev            # Start Next.js dev server
-npm run build          # Build for production
-npm start              # Start production server
-npm test               # Run unit tests
-npm run test:watch     # Tests in watch mode
-npm run test:coverage  # Tests + coverage report
-npm run lint           # Run ESLint
-npx playwright test    # Run E2E tests
+└── tsconfig.json
 ```
 
 ---
 
-## OpenSpec Files
+## Key Patterns
+
+### Auth token in API calls
+
+All authenticated requests to the backend must include the Auth0 access token:
+
+```ts
+// lib/api/client.ts
+export async function apiFetch<T>(path: string, options?: RequestInit & { token?: string }): Promise<T> {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.token ? { Authorization: `Bearer ${options.token}` } : {}),
+      ...options?.headers,
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, body.error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+```
+
+### Protected routes (middleware.ts)
+
+```ts
+// middleware.ts
+import { withMiddlewareAuthRequired } from '@auth0/nextjs-auth0/edge';
+export default withMiddlewareAuthRequired();
+export const config = { matcher: ['/orders/:path*', '/checkout/:path*', '/admin/:path*'] };
+```
+
+### Polling
+
+Used in order detail (SCRUM-33) and admin scraping jobs list (SCRUM-37):
+
+```ts
+// hooks/usePolling.ts
+useEffect(() => {
+  if (!shouldPoll) return;
+  const id = setInterval(refetch, 5000);
+  return () => clearInterval(id);
+}, [shouldPoll, refetch]);
+```
+
+### Admin key
+
+The admin section reads `X-Admin-Key` from `process.env.ADMIN_API_KEY` (server-side env var, not `NEXT_PUBLIC_`). It is injected server-side in route handlers or Server Components — never exposed to the browser.
+
+---
+
+## Running Tests
+
+```bash
+npm test                   # Run unit tests (Jest + RTL)
+npm run test:watch         # Watch mode
+npm run test:coverage      # Coverage report
+npx playwright test        # E2E tests
+```
+
+---
+
+## Linting
+
+```bash
+npm run lint               # ESLint
+npx tsc --noEmit           # TypeScript type check
+```
+
+---
+
+## Deploy to Vercel
+
+```bash
+npm run build              # Verify build locally
+vercel --prod              # Manual deploy
+```
+
+Or push to `main` for auto-deploy (configured in Vercel dashboard).
+
+**Vercel environment variables** to configure (Settings → Environment Variables):
 
 ```
-openspec/
-├── specs/
-│   ├── base-standards.mdc          # Core principles (all agents)
-│   ├── backend-standards.mdc       # FastAPI, Python, Supabase standards
-│   ├── frontend-standards.mdc      # Next.js App Router standards
-│   ├── documentation-standards.mdc # Docs and AI spec maintenance rules
-│   ├── api-spec.yml                # OpenAPI 3.0 spec (source of truth)
-│   ├── data-model.md               # Supabase/PostgreSQL relational schema
-│   └── development_guide.md        # This file
-└── .commands/
-    ├── plan-backend-ticket.md
-    ├── plan-frontend-ticket.md
-    ├── develop-backend.md
-    ├── develop-frontend.md
-    └── update-docs.md
+NEXT_PUBLIC_API_URL                 https://api.scrappy.io
+AUTH0_SECRET                        <random 32-byte hex>
+AUTH0_BASE_URL                      https://scrappy.io
+AUTH0_ISSUER_BASE_URL               https://your-tenant.us.auth0.com
+AUTH0_CLIENT_ID                     <auth0 client id>
+AUTH0_CLIENT_SECRET                 <auth0 client secret>
+AUTH0_AUDIENCE                      https://api.scrappy.io
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY  pk_live_...
+ADMIN_API_KEY                       <same value as backend>
+```
+
+---
+
+## NPM Scripts
+
+```bash
+npm run dev            # Start dev server (http://localhost:3000)
+npm run build          # Production build
+npm start              # Start production server
+npm run lint           # ESLint
+npm test               # Unit tests
+npm run test:watch     # Tests in watch mode
+npm run test:coverage  # Tests + coverage
+npx playwright test    # E2E tests
 ```
