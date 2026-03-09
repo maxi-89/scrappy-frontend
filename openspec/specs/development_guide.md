@@ -11,7 +11,7 @@ Setup and run instructions for the Scrappy Next.js frontend.
 | Framework | Next.js (App Router) |
 | Language | TypeScript (strict mode) |
 | Styling | Tailwind CSS |
-| Auth | Auth0 (`@auth0/nextjs-auth0`) |
+| Auth | Custom JWT (access_token 15m + refresh_token 7d) |
 | Payments | Stripe (`@stripe/stripe-js`, `@stripe/react-stripe-js`) |
 | HTTP | native `fetch` via `lib/api/` |
 | Testing | Jest + React Testing Library |
@@ -46,13 +46,9 @@ Edit `.env.local`:
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_API_URL` | Yes | Backend API base URL (e.g. `https://api.scrappy.io` or `http://localhost:8000`) |
-| `AUTH0_SECRET` | Yes | Random 32-byte secret for session encryption — `openssl rand -hex 32` |
-| `AUTH0_BASE_URL` | Yes | Frontend URL (e.g. `http://localhost:3000`) |
-| `AUTH0_ISSUER_BASE_URL` | Yes | Auth0 tenant URL (e.g. `https://your-tenant.us.auth0.com`) |
-| `AUTH0_CLIENT_ID` | Yes | Auth0 application client ID |
-| `AUTH0_CLIENT_SECRET` | Yes | Auth0 application client secret |
-| `AUTH0_AUDIENCE` | Yes | Auth0 API audience (e.g. `https://api.scrappy.io`) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Yes | Stripe publishable key (`pk_test_...` or `pk_live_...`) |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Yes | Google Maps API key (for zone autocomplete) |
+| `ADMIN_API_KEY` | Yes | Admin API key — injected server-side via `X-Admin-Key` header |
 
 > Never commit `.env.local` to version control.
 
@@ -63,21 +59,23 @@ npm run dev
 ```
 
 - App: `http://localhost:3000`
-- Auth callback route: `http://localhost:3000/api/auth/callback` (handled by `@auth0/nextjs-auth0`)
 
 ---
 
-## Auth0 Setup (local dev)
+## Auth (Custom JWT)
 
-The frontend uses `@auth0/nextjs-auth0`. The SDK automatically handles:
-- `/api/auth/login` — initiates login
-- `/api/auth/logout` — clears session
-- `/api/auth/callback` — exchanges code for tokens
-- `/api/auth/me` — returns session user (client-side)
+Authentication is implemented without any external SDK:
 
-After login, the SDK provides the user's `accessToken` (Auth0 JWT) which must be sent as `Authorization: Bearer {token}` to the backend API.
+- `/api/auth/login` — POST: calls backend, sets `access_token` + `refresh_token` cookies
+- `/api/auth/signup` — POST: calls backend, sets cookies
+- `/api/auth/logout` — POST: calls backend logout, clears cookies
+- `/api/auth/refresh` — POST: reads `refresh_token` cookie, rotates both tokens
 
-**Important**: After the Auth0 callback, call `POST /auth/sync` on the backend to register the user in the Scrappy DB (SCRUM-25).
+Cookie strategy:
+- `access_token`: non-httpOnly, SameSite=Lax, 15min TTL → readable client-side and by Server Components via `cookies()`
+- `refresh_token`: httpOnly, SameSite=Lax, 7d TTL → only set/cleared server-side
+
+After login the JWT payload is decoded client-side (`atob`) in `lib/auth/AuthContext.tsx` to extract `{ id, email }`.
 
 ---
 
@@ -86,13 +84,20 @@ After login, the SDK provides the user's `accessToken` (Auth0 JWT) which must be
 ```
 scrappy-frontend/
 ├── app/
-│   ├── layout.tsx                   # Root layout
+│   ├── layout.tsx                   # Root layout (wraps with AuthProvider)
 │   ├── page.tsx                     # Home → redirects to /offers
 │   ├── globals.css
 │   ├── api/
-│   │   └── auth/[auth0]/route.ts    # Auth0 SDK catch-all route handler
+│   │   └── auth/
+│   │       ├── login/route.ts       # POST: login proxy, sets cookies
+│   │       ├── signup/route.ts      # POST: signup proxy, sets cookies
+│   │       ├── logout/route.ts      # POST: logout, clears cookies
+│   │       └── refresh/route.ts     # POST: token rotation
 │   ├── auth/
-│   │   └── callback/page.tsx        # POST /auth/sync + redirect (SCRUM-25)
+│   │   ├── login/page.tsx           # Email + password login form
+│   │   ├── signup/page.tsx          # Registration form
+│   │   ├── forgot-password/page.tsx # Request password reset email
+│   │   └── reset-password/page.tsx  # Set new password (?token=)
 │   ├── offers/
 │   │   ├── page.tsx                 # Catalog of active offers (SCRUM-27)
 │   │   └── [id]/page.tsx            # Offer detail + order form (SCRUM-29)
@@ -114,23 +119,30 @@ scrappy-frontend/
 │           └── new/page.tsx         # Trigger job form (SCRUM-36)
 ├── components/
 │   ├── ui/                          # Button, Input, Card, Badge, Spinner...
+│   ├── layout/
+│   │   └── Navbar.tsx               # Top nav (shows user email + sign out)
 │   ├── offers/
-│   │   └── OfferCard.tsx            # SCRUM-28
+│   │   ├── OfferCard.tsx            # SCRUM-28
+│   │   └── OrderForm.tsx            # Order creation form
 │   ├── orders/
 │   │   ├── DownloadButton.tsx       # SCRUM-34
 │   │   └── OrderStatusBadge.tsx
 │   └── admin/
 │       └── PricingTable.tsx         # SCRUM-43
 ├── hooks/
-│   ├── usePolling.ts                # Generic polling hook (used in order detail + jobs list)
-│   └── useAuth.ts                   # Wraps Auth0 session + access token
+│   ├── usePolling.ts                # Generic polling hook
+│   └── useAuth.ts                   # Wraps AuthContext → { user, isLoading, isAuthenticated, accessToken }
 ├── lib/
 │   ├── api/
 │   │   ├── client.ts                # Base fetch with Bearer token injection (SCRUM-44)
+│   │   ├── authApi.ts               # Direct backend auth calls (signup, login, logout, refresh...)
 │   │   ├── offersApi.ts             # getOffers(), getOffer(id, zone?)
 │   │   ├── ordersApi.ts             # createOrder(), getOrders(), getOrder(id), downloadOrder(id)
 │   │   ├── pricingApi.ts            # getPricing(), upsertPricing()
 │   │   └── adminApi.ts              # Admin endpoints
+│   ├── auth/
+│   │   ├── AuthContext.tsx          # AuthProvider + useAuthContext()
+│   │   └── cookies.ts               # getClientAccessToken() — reads cookie client-side
 │   └── utils/
 │       ├── cn.ts                    # clsx + tailwind-merge
 │       ├── formatCurrency.ts
@@ -140,11 +152,11 @@ scrappy-frontend/
 │   ├── order.ts                     # OrderResponse, OrderDetailResponse, CreateOrderRequest
 │   ├── pricing.ts                   # PricingEntryResponse, UpsertPricingRequest
 │   └── scrapingJob.ts               # ScrapingJobResponse
-├── middleware.ts                    # Protected routes (SCRUM-26)
+├── middleware.ts                    # Cookie presence check → redirects to /auth/login (SCRUM-26)
 ├── .env.local                       ← not committed
 ├── .env.example
 ├── tailwind.config.ts
-├── next.config.ts
+├── next.config.mjs
 └── tsconfig.json
 ```
 
@@ -154,34 +166,44 @@ scrappy-frontend/
 
 ### Auth token in API calls
 
-All authenticated requests to the backend must include the Auth0 access token:
+**Client Components** — read from `AuthContext`:
 
 ```ts
-// lib/api/client.ts
-export async function apiFetch<T>(path: string, options?: RequestInit & { token?: string }): Promise<T> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options?.token ? { Authorization: `Bearer ${options.token}` } : {}),
-      ...options?.headers,
-    },
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error ?? `Request failed: ${res.status}`);
-  }
-  return res.json();
-}
+import { useAuth } from '@/hooks/useAuth';
+
+const { accessToken } = useAuth();
+const order = await getOrder(id, accessToken ?? '');
+```
+
+**Server Components** — read from cookies:
+
+```ts
+import { cookies } from 'next/headers';
+
+const token = (await cookies()).get('access_token')?.value ?? '';
+const orders = await getOrders(token);
 ```
 
 ### Protected routes (middleware.ts)
 
 ```ts
 // middleware.ts
-import { withMiddlewareAuthRequired } from '@auth0/nextjs-auth0/edge';
-export default withMiddlewareAuthRequired();
-export const config = { matcher: ['/orders/:path*', '/checkout/:path*', '/admin/:path*'] };
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest): NextResponse {
+  const token = request.cookies.get('access_token')?.value;
+  if (!token) {
+    const loginUrl = new URL('/auth/login', request.url);
+    loginUrl.searchParams.set('returnTo', request.nextUrl.pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/orders/:path*', '/checkout/:path*', '/admin/:path*'],
+};
 ```
 
 ### Polling
@@ -236,13 +258,8 @@ Or push to `main` for auto-deploy (configured in Vercel dashboard).
 
 ```
 NEXT_PUBLIC_API_URL                 https://api.scrappy.io
-AUTH0_SECRET                        <random 32-byte hex>
-AUTH0_BASE_URL                      https://scrappy.io
-AUTH0_ISSUER_BASE_URL               https://your-tenant.us.auth0.com
-AUTH0_CLIENT_ID                     <auth0 client id>
-AUTH0_CLIENT_SECRET                 <auth0 client secret>
-AUTH0_AUDIENCE                      https://api.scrappy.io
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY  pk_live_...
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY     <google maps key>
 ADMIN_API_KEY                       <same value as backend>
 ```
 

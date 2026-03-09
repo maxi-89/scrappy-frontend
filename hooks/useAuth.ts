@@ -1,15 +1,7 @@
 'use client';
 
-import { useUser } from '@auth0/nextjs-auth0/client';
-
-interface AuthUser {
-  sub?: string;
-  name?: string;
-  email?: string;
-  picture?: string;
-  accessToken?: string;
-  [key: string]: unknown;
-}
+import { useAuthContext } from '@/lib/auth/AuthContext';
+import type { AuthUser } from '@/lib/auth/AuthContext';
 
 interface UseAuthReturn {
   user: AuthUser | null;
@@ -19,16 +11,11 @@ interface UseAuthReturn {
 }
 
 export function useAuth(): UseAuthReturn {
-  const { user, isLoading } = useUser();
-
-  const typedUser = user != null ? (user as AuthUser) : null;
-  const isAuthenticated = !isLoading && typedUser !== null;
-  const accessToken = typedUser?.accessToken ?? null;
-
+  const ctx = useAuthContext();
   return {
-    user: typedUser,
-    isLoading,
-    isAuthenticated,
-    accessToken,
+    user: ctx.user,
+    isLoading: ctx.isLoading,
+    isAuthenticated: ctx.isAuthenticated,
+    accessToken: ctx.accessToken,
   };
 }

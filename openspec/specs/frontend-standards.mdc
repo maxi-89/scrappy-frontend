@@ -343,7 +343,7 @@ All API calls go through service modules in `lib/api/`. Never call `fetch` direc
 
 ### Base client (`lib/api/client.ts`)
 
-All requests go through a single base function that injects the Auth0 Bearer token and handles errors uniformly:
+All requests go through a single base function that injects the Bearer token and handles errors uniformly:
 
 ```typescript
 // lib/api/client.ts
@@ -401,19 +401,19 @@ export async function getOrder(id: string, token: string): Promise<OrderDetailRe
 
 ### Auth token
 
-Obtain the access token from the Auth0 SDK and pass it to every authenticated API call:
+Pass the JWT access token to every authenticated API call:
 
 ```tsx
 // In a Client Component:
-import { useUser } from '@auth0/nextjs-auth0/client';
+import { useAuth } from '@/hooks/useAuth';
 
-const { user } = useUser();
-const token = user?.accessToken as string;
-const order = await getOrder(id, token);
+const { accessToken } = useAuth();
+const order = await getOrder(id, accessToken ?? '');
 
-// In a Server Component (route handler / Server Action):
-import { getAccessToken } from '@auth0/nextjs-auth0';
-const { accessToken } = await getAccessToken();
+// In a Server Component:
+import { cookies } from 'next/headers';
+const token = (await cookies()).get('access_token')?.value ?? '';
+const orders = await getOrders(token);
 ```
 
 **Rules:**

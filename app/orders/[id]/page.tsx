@@ -1,17 +1,17 @@
-import { getAccessToken } from '@auth0/nextjs-auth0';
+import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getOrder } from '@/lib/api/ordersApi';
 import { ApiError } from '@/lib/api/client';
 import { OrderDetail } from '@/components/orders/OrderDetail';
 import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 
 interface OrderDetailPageProps {
   params: { id: string };
 }
 
 export default async function OrderDetailPage({ params }: OrderDetailPageProps) {
-  const { accessToken } = await getAccessToken();
-  const token = accessToken ?? '';
+  const token = (await cookies()).get('access_token')?.value ?? '';
 
   let order;
   try {
@@ -24,16 +24,17 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-4">
+    <main className="mx-auto max-w-3xl px-4 py-12">
+      <div className="mb-6">
         <Link
           href="/orders"
-          className="text-sm text-indigo-600 hover:text-indigo-500"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-400 transition-colors hover:text-cyan-400"
         >
-          &larr; Back to Orders
+          <ArrowLeft className="h-4 w-4" />
+          Back to Orders
         </Link>
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
+      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-8">
         <OrderDetail initialOrder={order} accessToken={token} />
       </div>
     </main>

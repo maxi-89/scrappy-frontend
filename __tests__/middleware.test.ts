@@ -1,8 +1,11 @@
-jest.mock('@auth0/nextjs-auth0/edge', () => ({
-  withMiddlewareAuthRequired: jest.fn(() => jest.fn()),
+jest.mock('next/server', () => ({
+  NextResponse: {
+    redirect: jest.fn((url: URL) => ({ status: 307, headers: { get: (k: string) => k === 'location' ? url.toString() : null } })),
+    next: jest.fn(() => ({ status: 200 })),
+  },
+  NextRequest: jest.fn(),
 }));
 
-import { withMiddlewareAuthRequired } from '@auth0/nextjs-auth0/edge';
 import { config } from '../middleware';
 
 describe('middleware config', () => {
@@ -17,10 +20,8 @@ describe('middleware config', () => {
   it('protects /admin routes', () => {
     expect(config.matcher).toContain('/admin/:path*');
   });
-});
 
-describe('middleware default export', () => {
-  it('calls withMiddlewareAuthRequired', () => {
-    expect(withMiddlewareAuthRequired).toHaveBeenCalled();
+  it('has exactly 3 protected matchers', () => {
+    expect(config.matcher).toHaveLength(3);
   });
 });

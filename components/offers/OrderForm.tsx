@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@auth0/nextjs-auth0/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { ZoneAutocomplete } from '@/components/ui/ZoneAutocomplete';
 import { createOrder } from '@/lib/api/ordersApi';
 import { getOffer } from '@/lib/api/offersApi';
 import { formatCurrency } from '@/lib/utils/formatCurrency';
@@ -22,37 +22,44 @@ const FORMAT_OPTIONS = [
   { value: 'json', label: 'JSON' },
 ];
 
-interface AuthUser {
-  sub?: string;
-  accessToken?: string;
-  [key: string]: unknown;
-}
-
 export function OrderForm({ offer }: OrderFormProps) {
   const router = useRouter();
-  const { user } = useUser();
-  const typedUser = user as AuthUser | null | undefined;
+  const { user, accessToken } = useAuth();
 
   const [zone, setZone] = useState('');
+  const [validatedZone, setValidatedZone] = useState('');
   const [format, setFormat] = useState<OrderFormat>('csv');
   const [price, setPrice] = useState<number | null>(offer.price_usd);
+  const [isFetchingPrice, setIsFetchingPrice] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleZoneBlur() {
-    if (!zone) return;
+  async function handleValidPlace(placeName: string) {
+    setValidatedZone(placeName);
+    if (!placeName) {
+      setPrice(offer.price_usd);
+      return;
+    }
+    setIsFetchingPrice(true);
     try {
-      const updatedOffer = await getOffer(offer.id, zone);
+      const updatedOffer = await getOffer(offer.id, placeName);
       setPrice(updatedOffer.price_usd);
     } catch {
-      // non-fatal: keep previous price
+      setPrice(null);
+    } finally {
+      setIsFetchingPrice(false);
     }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!typedUser) {
+    if (!validatedZone) {
+      setError('Please select a valid location from the suggestions.');
+      return;
+    }
+
+    if (!user) {
       router.push('/auth/login');
       return;
     }
@@ -61,9 +68,9 @@ export function OrderForm({ offer }: OrderFormProps) {
     setError(null);
 
     try {
-      const token = typedUser.accessToken ?? '';
+      const token = accessToken ?? '';
       const result = await createOrder(
-        { offer_id: offer.id, zone, format },
+        { offer_id: offer.id, zone: validatedZone, format },
         token
       );
       router.push(`/checkout/${result.order_id}?client_secret=${result.client_secret}`);
@@ -76,14 +83,12 @@ export function OrderForm({ offer }: OrderFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <Input
+      <ZoneAutocomplete
         id="zone"
-        label="Zone"
+        label="Location"
         value={zone}
-        onChange={(e) => setZone(e.target.value)}
-        onBlur={handleZoneBlur}
-        placeholder="e.g. New York"
-        required
+        onChange={setZone}
+        onValidPlace={handleValidPlace}
       />
 
       <Select
@@ -94,17 +99,38 @@ export function OrderForm({ offer }: OrderFormProps) {
         onChange={(e) => setFormat(e.target.value as OrderFormat)}
       />
 
-      {price !== null && (
-        <p className="text-sm text-gray-700">
-          Price: <span className="font-semibold">{formatCurrency(price)}</span>
-        </p>
+      {isFetchingPrice && (
+        <p className="text-sm text-gray-400">Fetching price...</p>
+      )}
+
+      {!isFetchingPrice && validatedZone && price !== null && (
+        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-4 py-3">
+          <p className="text-sm text-gray-400">
+            Price for <span className="text-white">{validatedZone}</span>:{' '}
+            <span className="font-semibold text-cyan-400">{formatCurrency(price)}</span>
+          </p>
+        </div>
+      )}
+
+      {!isFetchingPrice && validatedZone && price === null && (
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3">
+          <p className="text-sm text-yellow-400">
+            No pricing configured for this zone yet.
+          </p>
+        </div>
       )}
 
       {error && (
-        <p className="text-sm text-red-600">{error}</p>
+        <p className="text-sm text-red-400">{error}</p>
       )}
 
-      <Button type="submit" variant="primary" isLoading={isLoading} className="w-full">
+      <Button
+        type="submit"
+        variant="primary"
+        isLoading={isLoading}
+        disabled={!validatedZone || price === null}
+        className="w-full"
+      >
         Order Now
       </Button>
     </form>

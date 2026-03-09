@@ -23,19 +23,22 @@
 
 **Business model**: Users browse offers (by category), select a zone, choose a format, and pay. Pricing is zone-based (configured by admin). After payment, AWS Step Functions runs the scraping pipeline and delivers the result file.
 
-**Frontend Stack**: Next.js (App Router) · TypeScript (strict) · Tailwind CSS · Auth0 (`@auth0/nextjs-auth0`) · Stripe (`@stripe/react-stripe-js`) · Jest + React Testing Library · Playwright
+**Frontend Stack**: Next.js (App Router) · TypeScript (strict) · Tailwind CSS · Custom JWT Auth · Stripe (`@stripe/react-stripe-js`) · Jest + React Testing Library · Playwright
 
-**Backend API**: `https://api.scrappy.io` (FastAPI on AWS Lambda). Auth via Auth0 RS256 JWT (Bearer token). See `openspec/specs/api-spec.yml` for all endpoints.
+**Backend API**: `https://api.scrappy.io` (NestJS on AWS Lambda). Auth via custom RS256 JWT (access_token 15m + refresh_token 7d). See `openspec/specs/api-spec.yml` for all endpoints.
 
 **Infrastructure**: Vercel (frontend deployment)
 
 ## 4. Auth
 
-Authentication is handled by **Auth0** (`@auth0/nextjs-auth0`).
-- The SDK manages login/logout/callback routes at `/api/auth/[auth0]`
-- After login, call `POST /auth/sync` on the backend to register the user in the Scrappy DB
-- Pass the Auth0 `accessToken` as `Authorization: Bearer {token}` in all authenticated API requests
-- Protected routes: `/orders/**`, `/checkout/**`, `/admin/**` — enforced via `middleware.ts`
+Authentication is handled by **custom JWT** (no external SDK).
+- Login/signup/logout/refresh are proxied through Next.js API routes at `/api/auth/*`
+- `access_token` cookie: non-httpOnly, 15min TTL — readable by server components and client JS
+- `refresh_token` cookie: httpOnly, 7d TTL — only set/cleared server-side
+- `lib/auth/AuthContext.tsx` provides `AuthProvider` + `useAuthContext()` — decodes JWT via `atob`
+- `hooks/useAuth.ts` wraps the context and exposes `{ user, isLoading, isAuthenticated, accessToken }`
+- Pass `accessToken` as `Authorization: Bearer {token}` in all authenticated API requests
+- Protected routes: `/orders/**`, `/checkout/**`, `/admin/**` — enforced via `middleware.ts` (cookie check)
 - Admin routes additionally require `X-Admin-Key` header (server-side env var `ADMIN_API_KEY`)
 
 ## 5. Specific Standards
